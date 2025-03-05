@@ -1,10 +1,13 @@
 # syntax-gaslighting.nvim
 
-Gaslighting? That's not even a real word, you're crazy.
+<div align="center">
+  <p>Gaslighting? That's not even a real word, you're crazy.</p>
+  <img src=".github/assets/gaslight.png" alt="Syntax Gaslighting in action">
+</div>
 
 ## Usage
 
-Use what?
+_Use what?_
 
 Install with your favorite package manager (or Nix), then call the `setup`
 function.
@@ -31,6 +34,7 @@ require("syntax-gaslighting").setup({
   },
 
   -- Option to merge user messages with the default ones (default: false)
+  -- If disabled, the messages table will override default messages.
   merge_messages = true,    -- Default is false
 
   -- Highlight group for gaslighting messages (linked to Comment by default)
@@ -49,7 +53,9 @@ require("syntax-gaslighting").setup({
 
 ## License
 
-Based on the awesome
-[VSCode extension](https://github.com/eNiiju/syntax-gaslighting) from
-[@eNiiju](https://github.com/eNiiju). To remain compatible with the license,
-syntax-gaslighting.nvim is licensed under the [MPL](./LICENSE)
+[VSCode extension]: https://github.com/eNiiju/syntax-gaslighting
+[@eNiiju]: https://github.com/eNiiju
+
+Based on the awesome [VSCode extension] by [@eNiiju]. To remain compatible with
+the license, syntax-gaslighting.nvim is licensed under the [MPL 2.0](./LICENSE).
+Please see the license file for more details.
