@@ -8,6 +8,9 @@ local default_config = {
     debounce_delay = 500,               -- Debounce delay in ms
     auto_update = true,                 -- Whether to auto-update on buffer events
     merge_messages = false,             -- If true, merge user messages with default ones
+    filetypes_to_ignore = {             -- List of filetypes to ignore (default: "netrw")
+        "netrw",
+    },
     messages = {
         "Are you sure this will pass the code quality checks? 🤔",
         "Is this line really covered by unit tests? 🧐",
@@ -20,9 +23,8 @@ local default_config = {
         "Please. Tell me Copilot wrote this one... 🤖",
         "Totally not a memory leak... 🚽",
         "I'd be embarrassed to push this to git if I were you. 😳",
-        "Would God forgive you for this? ✝️a",
+        "Would God forgive you for this? ✝️",
     },
-
 }
 
 local config = {}
@@ -93,6 +95,17 @@ local function createHash(str)
     return string.format("%08x%08x", hash1, hash2)
 end
 
+-- Check if the current buffer's filetype is in the ignore list
+local function shouldIgnoreFileType()
+    local filetype = vim.bo.filetype
+    for _, ft in ipairs(config.filetypes_to_ignore) do
+        if filetype == ft then
+            return true
+        end
+    end
+    return false
+end
+
 -- Determine if a gaslighting message should be applied to a line and return it if so.
 local function getGaslightingMessageForLineContent(line)
     local hash = createHash(line)
@@ -107,7 +120,7 @@ end
 
 -- Update the gaslighting decorations in the current buffer.
 function M.update_decorations()
-    if not M.is_enabled then
+    if not M.is_enabled or shouldIgnoreFileType() then
         return
     end
 
@@ -120,7 +133,7 @@ function M.update_decorations()
         if #trimmed >= config.min_line_length then
             -- Skip dummy comment lines (detection based on starting patterns)
             -- TODO: use Treesitter for this
-            if not (trimmed:find("^//") or trimmed:find("^#") or trimmed:find("^/%*") or trimmed:find("^%*") or trimmed:find("^<!--") or trimmed:find("--")) then
+            if not (trimmed:find("^//") or trimmed:find("^#") or trimmed:find("^/%*") or trimmed:find("^%*") or trimmed:find("^<!--")) then
                 local message = getGaslightingMessageForLineContent(trimmed)
                 if message then
                     local first_non_whitespace = line:find("%S")
