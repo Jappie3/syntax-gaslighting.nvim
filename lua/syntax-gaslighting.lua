@@ -1,28 +1,88 @@
-local api = vim.api
+local M = {}
 
-local DEFAULT_GASLIGHTING_CHANCE = 5 -- 5% chance per line
-local MIN_LINE_LENGTH = 10           -- minimum trimmed line length to apply gaslighting
-local GASLIGHTING_MESSAGES = {
-    "Are you sure this will pass the code quality checks? 🤔",
-    "Is this line really covered by unit tests? 🧐",
-    "I wouldn't commit that line without double checking... 💭",
-    "Your tech lead might have questions about this one 🤔",
-    "That's an... interesting way to solve this 🤯",
-    "Did you really mean to write it this way? 🤔",
-    "Maybe add a comment explaining why this isn't as bad as it looks? 📝",
-    "Bold choice! Very... creative 💡",
-    "Please. Tell me Copilot wrote this one... 🤖",
-    "Totally not a memory leak... 🚽",
-    "I'd be embarrassed to push this to git if I were you. 😳",
+-- Default configuration options
+local default_config = {
+    gaslighting_chance = 5,             -- 5% chance per line
+    min_line_length = 10,               -- Minimum trimmed line length to apply gaslighting
+    highlight = "GaslightingUnderline", -- Highlight group name (linked to Comment by default)
+    debounce_delay = 500,               -- Debounce delay in ms
+    auto_update = true,                 -- Whether to auto-update on buffer events
+    merge_messages = false,             -- If true, merge user messages with default ones
+    messages = {
+        "Are you sure this will pass the code quality checks? 🤔",
+        "Is this line really covered by unit tests? 🧐",
+        "I wouldn't commit that line without double checking... 💭",
+        "Your tech lead might have questions about this one 🤔",
+        "That's an... interesting way to solve this 🤯",
+        "Did you really mean to write it this way? 🤔",
+        "Maybe add a comment explaining why this isn't as bad as it looks? 📝",
+        "Bold choice! Very... creative 💡",
+        "Please. Tell me Copilot wrote this one... 🤖",
+        "Totally not a memory leak... 🚽",
+        "I'd be embarrassed to push this to git if I were you. 😳",
+        "Would God forgive you for this? ✝️a",
+    },
+
 }
 
--- Plugin state
-local is_enabled = true
-local gaslighting_chance_percentage = DEFAULT_GASLIGHTING_CHANCE
+local config = {}
+local api = vim.api
+local timer = nil
 local ns = api.nvim_create_namespace("syntax_gaslighting")
+M.is_enabled = true
 
-vim.cmd("highlight default link GaslightingUnderline Comment")
+-- If user_config.merge_messages is true and user_config.messages is provided,
+-- the plugin will merge default messages with user messages.
+function M.setup(user_config)
+    user_config = user_config or {}
+    config = vim.tbl_deep_extend("force", {}, default_config, user_config)
 
+    -- Merge messages if option is enabled and user provided messages.
+    if user_config.merge_messages and user_config.messages then
+        local merged = vim.deepcopy(default_config.messages)
+        for _, msg in ipairs(user_config.messages) do
+            table.insert(merged, msg)
+        end
+        config.messages = merged
+    end
+
+    -- Setup highlight group for gaslighting messages.
+    vim.cmd("highlight default link " .. config.highlight .. " Comment")
+
+    if config.auto_update then
+        api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI" }, {
+            callback = function() M.schedule_update() end,
+        })
+    end
+
+    -- Command to toggle the gaslighting functionality.
+    api.nvim_create_user_command("SyntaxGaslightingToggle", function()
+        M.is_enabled = not M.is_enabled
+        if M.is_enabled then
+            print("Syntax Gaslighting enabled! Prepare to question everything...")
+            M.schedule_update()
+        else
+            print("Syntax Gaslighting disabled. You can code in peace now.")
+            local bufnr = api.nvim_get_current_buf()
+            api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+        end
+    end, {})
+
+    -- Command to change the gaslighting chance percentage.
+    api.nvim_create_user_command("SyntaxGaslightingEditChance", function()
+        local input = vim.fn.input("Enter the percentage chance of gaslighting (1-100): ", config.gaslighting_chance)
+        local num = tonumber(input)
+        if num and num >= 1 and num <= 100 then
+            config.gaslighting_chance = num
+            print("Gaslighting chance set to " .. config.gaslighting_chance .. "%")
+            M.schedule_update()
+        else
+            print("Invalid input. Please enter a number between 1 and 100.")
+        end
+    end, {})
+end
+
+-- A simple deterministic hash function (not cryptographically secure)
 local function createHash(str)
     local hash1, hash2 = 0, 0
     for i = 1, #str do
@@ -33,41 +93,40 @@ local function createHash(str)
     return string.format("%08x%08x", hash1, hash2)
 end
 
--- Given a line of code, decide if a gaslighting message should be applied
--- and return the selected message if so.
+-- Determine if a gaslighting message should be applied to a line and return it if so.
 local function getGaslightingMessageForLineContent(line)
     local hash = createHash(line)
     local selectionNum = tonumber(hash:sub(1, 8), 16)
     local messageNum = tonumber(hash:sub(-8), 16)
-    if (selectionNum % 100) < gaslighting_chance_percentage then
-        local messageIndex = (messageNum % #GASLIGHTING_MESSAGES) + 1
-        return GASLIGHTING_MESSAGES[messageIndex]
+    if (selectionNum % 100) < config.gaslighting_chance then
+        local messageIndex = (messageNum % #config.messages) + 1
+        return config.messages[messageIndex]
     end
     return nil
 end
 
 -- Update the gaslighting decorations in the current buffer.
-local function update_gaslighting_decorations()
-    if not is_enabled then
+function M.update_decorations()
+    if not M.is_enabled then
         return
     end
 
     local bufnr = api.nvim_get_current_buf()
-    -- Clear previous extmarks in our namespace
+    -- Clear previous extmarks in our namespace.
     api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
     local lines = api.nvim_buf_get_lines(bufnr, 0, -1, false)
     for i, line in ipairs(lines) do
         local trimmed = vim.trim(line)
-        if #trimmed >= MIN_LINE_LENGTH then
+        if #trimmed >= config.min_line_length then
             -- Skip dummy comment lines (detection based on starting patterns)
-            -- There can be some native API for integration, but I'm not sure.
-            if not (trimmed:find("^//") or trimmed:find("^#") or trimmed:find("^/%*") or trimmed:find("^%*") or trimmed:find("^<!--")) then
+            -- TODO: use Treesitter for this
+            if not (trimmed:find("^//") or trimmed:find("^#") or trimmed:find("^/%*") or trimmed:find("^%*") or trimmed:find("^<!--") or trimmed:find("--")) then
                 local message = getGaslightingMessageForLineContent(trimmed)
                 if message then
                     local first_non_whitespace = line:find("%S")
                     if first_non_whitespace then
                         api.nvim_buf_set_extmark(bufnr, ns, i - 1, first_non_whitespace - 1, {
-                            virt_text = { { message, "GaslightingUnderline" } },
+                            virt_text = { { message, config.highlight } },
                             virt_text_pos = "eol",
                             hl_mode = "combine",
                         })
@@ -78,52 +137,16 @@ local function update_gaslighting_decorations()
     end
 end
 
--- Debounce update (updates after 500ms of inactivity)
-local timer = nil
-local function schedule_update()
+-- Debounce update: schedules an update after a delay.
+function M.schedule_update()
     if timer then
         timer:stop()
         timer:close()
     end
     timer = vim.loop.new_timer()
-    timer:start(500, 0, vim.schedule_wrap(function()
-        update_gaslighting_decorations()
+    timer:start(config.debounce_delay, 0, vim.schedule_wrap(function()
+        M.update_decorations()
     end))
 end
 
--- Setup autocommands to update decorations on buffer enter and changes.
-api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI" }, {
-    callback = function()
-        schedule_update()
-    end,
-})
-
--- Command to toggle the gaslighting functionality.
-vim.api.nvim_create_user_command("SyntaxGaslightingToggle", function()
-    is_enabled = not is_enabled
-    if is_enabled then
-        print("Syntax Gaslighting enabled! Prepare to question everything...")
-        schedule_update()
-    else
-        print("Syntax Gaslighting disabled. You can code in peace now.")
-        local bufnr = api.nvim_get_current_buf()
-        api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
-    end
-end, {})
-
--- Command to change the gaslighting chance percentage.
-vim.api.nvim_create_user_command("SyntaxGaslightingEditChance", function()
-    local input = vim.fn.input("Enter the percentage chance of gaslighting (1-100): ", gaslighting_chance_percentage)
-    local num = tonumber(input)
-    if num and num >= 1 and num <= 100 then
-        gaslighting_chance_percentage = num
-        print("Gaslighting chance set to " .. gaslighting_chance_percentage .. "%")
-        schedule_update()
-    else
-        print("Invalid input. Please enter a number between 1 and 100.")
-    end
-end, {})
-
-return {
-    update = update_gaslighting_decorations,
-}
+return M
