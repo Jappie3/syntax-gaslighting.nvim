@@ -10,6 +10,10 @@ local default_config = {
     merge_messages = false,             -- If true, merge user messages with default ones
     filetypes_to_ignore = {             -- List of filetypes to ignore (default: "netrw")
         "netrw",
+        "NvimTree",
+        "neo-tree",
+        "Telescope",
+        "qf"
     },
     messages = {
         "Are you sure this will pass the code quality checks? 🤔",
