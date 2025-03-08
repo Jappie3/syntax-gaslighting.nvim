@@ -191,12 +191,22 @@ end
 
 --- Debounced update function
 function M.schedule_update()
+    local uv = vim.uv or vim.loop
+
+    -- Properly clean up the previous timer before creating a new one.
+    -- Do NOT move this block below `uv.new_timer()`, or the new timer
+    -- will be stopped and closed immediately after being created.
     if timer then
-        timer:stop()
-        timer:close()
+        if timer.stop then timer:stop() end
+        if timer.close then timer:close() end
     end
-    timer = vim.loop.new_timer()
-    timer:start(config.debounce_delay, 0, vim.schedule_wrap(M.update_decorations))
+
+    timer = uv.new_timer()
+
+    -- Ensure the new timer is valid before starting it.
+    if timer then
+        timer:start(config.debounce_delay, 0, vim.schedule_wrap(M.update_decorations))
+    end
 end
 
 return M
