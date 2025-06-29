@@ -169,20 +169,28 @@ function M.update_decorations()
     api.nvim_buf_clear_namespace(bufnr, ns, 0, -1) -- Clear previous decorations
     local lines = api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
+    -- Track processed lines to avoid duplicates
+    local processed_hashes = {}
+
     for i, line in ipairs(lines) do
         local trimmed = vim.trim(line)
 
         -- Skip comment lines entirely
         if #trimmed >= config.min_line_length and not isComment(trimmed) then
-            local message = getGaslightingMessageForLineContent(trimmed)
-            if message then
-                local first_non_whitespace = line:find("%S")
-                if first_non_whitespace then
-                    api.nvim_buf_set_extmark(bufnr, ns, i - 1, first_non_whitespace - 1, {
-                        virt_text = { { message, config.highlight } },
-                        virt_text_pos = "eol",
-                        hl_mode = "combine",
-                    })
+            local hash = createHash(trimmed)
+
+            if not processed_hashes[hash] then
+                processed_hashes[hash] = true
+                local message = getGaslightingMessageForLineContent(trimmed)
+                if message then
+                    local first_non_whitespace = line:find("%S")
+                    if first_non_whitespace then
+                        api.nvim_buf_set_extmark(bufnr, ns, i - 1, first_non_whitespace - 1, {
+                            virt_text = { { message, config.highlight } },
+                            virt_text_pos = "eol",
+                            hl_mode = "combine",
+                        })
+                    end
                 end
             end
         end
